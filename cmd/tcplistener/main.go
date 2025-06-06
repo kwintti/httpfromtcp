@@ -7,8 +7,8 @@ import (
 	"log"
 	"net"
 	"strings"
-	"time"
-)
+// 	"time"
+ )
 
 func main() {
 	l, err := net.Listen("tcp", ":42069")
@@ -38,7 +38,7 @@ func getLinesChannel(f net.Conn) <-chan string {
 		currentLine := ""
 		slice := make([]byte, 8)
 		for {
-			err := f.SetDeadline(time.Now().Add(time.Second))
+			//err := f.SetDeadline(time.Now().Add(time.Second))
 			n, err := f.Read(slice)
 			if n == 0 {
 				toString := string(slice[:n])
