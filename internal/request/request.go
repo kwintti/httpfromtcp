@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const BufferSize = 8
+
 type ParserState int
 
 const (
@@ -27,20 +29,37 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	b, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("Reading from reader failed: %v", err)
-	}
-	slice := make([]byte, 8)
+	buf := make([]byte, BufferSize, BufferSize)
+
+	var ReadToIndex = 0
+	var NewRequest Request
+
+	NewRequest.ParserState = initialized
+
 	for {
-		reader.Read(slice)
-	}
-	parsed, _, err := parseRequestLine(b)
-	if err != nil {
-		return nil, fmt.Errorf("Parsing failed: %v", err)
+		if NewRequest.ParserState == done {
+			break
+		}
+		if ReadToIndex == len(buf) {
+			bufBigger := make([]byte, len(buf)*2,len(buf)*2)
+			copy(bufBigger, buf)
+			buf = bufBigger
+		}
+		n, err := reader.Read(buf[ReadToIndex:])
+		if err != nil {
+			return nil, fmt.Errorf("Reading from the reader failed")
+		}
+		ReadToIndex += n
+		read, err := NewRequest.parse(buf[:ReadToIndex])
+		if err != nil {
+			return nil, fmt.Errorf("Couldn't parse to the buffer")
+		}
+		copy(buf[0:len(buf)-read], buf[read:])
+		ReadToIndex -= read
+		buf = buf[:ReadToIndex]
 	}
 
-	return &Request{parsed, 1}, nil
+	return &NewRequest, nil
 }
 
 func parseRequestLine(line []byte) (RequestLine, int, error) {
