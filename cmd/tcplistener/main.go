@@ -1,13 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"strings"
-// 	"time"
+	"github.com/kwintti/httpfromtcp/internal/request"
  )
 
 func main() {
@@ -23,49 +20,14 @@ func main() {
 		}
 		fmt.Println("Connection have been accepted")
 
-		for line := range getLinesChannel(conn) {
-			fmt.Printf("%s\n", line)
+		req, err := request.RequestFromReader(conn)
+		if err != nil {
+			fmt.Printf("RequestFromReader failed: %v\n", err)
 		}
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", req.RequestLine.Method)	
+		fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)	
+		fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)	
 		fmt.Println("Connection is closed")
 	 }
 }
-
-func getLinesChannel(f net.Conn) <-chan string {
-	linesChan := make(chan string)
-	go func(){
-		defer f.Close()
-		defer close(linesChan)
-		currentLine := ""
-		slice := make([]byte, 8)
-		for {
-			//err := f.SetDeadline(time.Now().Add(time.Second))
-			n, err := f.Read(slice)
-			if n == 0 {
-				toString := string(slice[:n])
-				currentLine += toString
-				linesChan <- currentLine
-				break
-			}
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					toString := string(slice[:n])
-					currentLine += toString
-					linesChan <- currentLine
-					break
-				}
-				log.Fatal(err)
-			}
-			toString := string(slice[:n])
-			part, endPart, found := strings.Cut(toString, "\n")
-			currentLine += part
-			if found {
-				linesChan <- currentLine
-				currentLine = endPart
-				continue
-			}
-		}
-	}()
-	return linesChan
-}
-
-
