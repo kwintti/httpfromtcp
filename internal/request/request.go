@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"regexp"
 	"strings"
+
+	"github.com/kwintti/httpfromtcp/internal/headers"
 )
 
 const BufferSize = 8
@@ -14,12 +17,14 @@ type ParserState int
 
 const (
 	initialized ParserState = iota
+	requestStateParsingHeaders
 	done
 )
 
 type Request struct {	
 	RequestLine RequestLine
 	ParserState
+	Headers headers.Headers 
 }
 
 type RequestLine struct {
@@ -52,11 +57,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		ReadToIndex += n
 		read, err := NewRequest.parse(buf[:ReadToIndex])
 		if err != nil {
-			return nil, fmt.Errorf("Couldn't parse to the buffer")
+			return nil, fmt.Errorf("Couldn't parse to the buffer: %v", err)
 		}
 		copy(buf[0:len(buf)-read], buf[read:])
 		ReadToIndex -= read
-		buf = buf[:ReadToIndex]
 	}
 
 	return &NewRequest, nil
@@ -90,7 +94,8 @@ func parseRequestLine(line []byte) (RequestLine, int, error) {
 	},bytesRead, nil
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parseSingle(data []byte) (int, error) {
+	log.Printf("ParserState: %v", r.ParserState)
 	if r.ParserState == initialized { 
 		parsed, bytesRead, err := parseRequestLine(data)
 		if err != nil {
@@ -100,12 +105,37 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = parsed
-		r.ParserState = done 
+		r.ParserState = requestStateParsingHeaders 
 		return bytesRead, nil
 	}
-	if r.ParserState == done {
-		return 0, fmt.Errorf("error, trying to read data in a done state") 
+	if r.ParserState == requestStateParsingHeaders {
+		if r.Headers == nil {
+			r.Headers = headers.NewHeaders()
+		}
+		n, d, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, fmt.Errorf("Couldn't parse header: %v", err)
+		}
+		if d {
+			r.ParserState = done
+		}
+		return n, nil
 	}
-	return 0, fmt.Errorf("unknown state")
 
+	return 0, nil 
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesRead := 0
+	for r.ParserState != done {
+		n, err := r.parseSingle(data[totalBytesRead:])
+		if err != nil {
+			return 0, fmt.Errorf("Couldn't parse sinlge: %v", err)
+		}
+		totalBytesRead += n
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesRead, nil
 }
