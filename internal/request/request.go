@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"regexp"
 	"strings"
 
@@ -95,7 +94,6 @@ func parseRequestLine(line []byte) (RequestLine, int, error) {
 }
 
 func (r *Request) parseSingle(data []byte) (int, error) {
-	log.Printf("ParserState: %v", r.ParserState)
 	if r.ParserState == initialized { 
 		parsed, bytesRead, err := parseRequestLine(data)
 		if err != nil {
