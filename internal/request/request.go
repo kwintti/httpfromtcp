@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/kwintti/httpfromtcp/internal/headers"
@@ -17,6 +18,7 @@ type ParserState int
 const (
 	initialized ParserState = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	done
 )
 
@@ -24,6 +26,7 @@ type Request struct {
 	RequestLine RequestLine
 	ParserState
 	Headers headers.Headers 
+	Body []byte
 }
 
 type RequestLine struct {
@@ -115,9 +118,39 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, fmt.Errorf("Couldn't parse header: %v", err)
 		}
 		if d {
-			r.ParserState = done
+			r.ParserState = requestStateParsingBody 
 		}
 		return n, nil
+	}
+
+	if r.ParserState == requestStateParsingBody {
+		val, ok:= r.Headers.Get("Content-Length")
+		if !ok {
+			r.ParserState = done
+			return 0, nil
+		}
+		contLength, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, fmt.Errorf("Couldn't convert to int: %v", err)
+		}
+
+		bytesLeftToRead := contLength - len(r.Body)
+		slice := min(len(data), bytesLeftToRead)
+
+		r.Body = append(r.Body, data[:slice]...)  
+
+		if len(r.Body) > contLength {
+			return 0, fmt.Errorf("Mismatch in Content-Length")
+		}
+
+		if len(r.Body) == contLength {
+			r.ParserState = done
+			return slice, nil
+		}
+
+		if len(r.Body) < contLength {
+			return slice, nil
+		}
 	}
 
 	return 0, nil 

@@ -54,3 +54,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	
 	return BytesRead, false, nil
 }
+
+func (h Headers) Get(key string) (string, bool) {
+	key = strings.ToLower(key)
+	value := h[key]
+	if value != "" {
+		return value, true
+	}
+	return "", false
+}
