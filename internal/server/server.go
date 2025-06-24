@@ -1,10 +1,16 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"sync/atomic"
+
+	"github.com/kwintti/httpfromtcp/internal/request"
+	"github.com/kwintti/httpfromtcp/internal/response"
 )
 
 
@@ -12,9 +18,10 @@ import (
 type Server struct {
 	Listener net.Listener
 	serving atomic.Bool
+	handler Handler 
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, handler Handler) (*Server, error) {
 	portString := strconv.Itoa(port)
 	l, err := net.Listen("tcp", ":"+portString)
 	if err != nil {
@@ -22,6 +29,7 @@ func Serve(port int) (*Server, error) {
 	}
 	server := &Server{
 		Listener:l,
+		handler: handler,
 	}
 	server.serving.Store(true)
 	go server.listen()
@@ -53,10 +61,35 @@ func (s *Server) Close() error{
 }
 
 func (s *Server) handle(conn net.Conn) {
-	resp := []byte(
-	"HTTP/1.1 200 OK\r\n" +
-	"Content-Type: text/plain\r\n\r\n" + 
-	"Hello World!")
-	conn.Write(resp)
-	conn.Close()
+	defer conn.Close()
+	req, err := request.RequestFromReader(conn)
+	if err != nil {
+		WriteError(conn, HandlerError{StatusCode: 400, Message: "Bad Request\n"})
+		return
+	}
+	var buf bytes.Buffer
+	errorHand := s.handler(&buf, req)
+	if errorHand != nil {
+		WriteError(conn, *errorHand)
+		return
+	}
+
+	response.WriteStatusLine(conn, 200)
+	headers := response.GetDefaultHeaders(buf.Len())
+	response.WriteHeaders(conn, headers)
+	conn.Write(buf.Bytes())
+
+}
+
+type Handler func(w io.Writer, req *request.Request) *HandlerError
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message string
+}
+
+func WriteError(w io.Writer, handlerError HandlerError) {
+	fmt.Fprintf(w, "HTTP/1.1 %v %v\r\n", handlerError.StatusCode, http.StatusText(int(handlerError.StatusCode))) 
+	fmt.Fprint(w, "\r\n") 
+	fmt.Fprintf(w, "%v", handlerError.Message) 
 }
