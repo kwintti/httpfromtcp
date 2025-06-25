@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -67,21 +66,12 @@ func (s *Server) handle(conn net.Conn) {
 		WriteError(conn, HandlerError{StatusCode: 400, Message: "Bad Request\n"})
 		return
 	}
-	var buf bytes.Buffer
-	errorHand := s.handler(&buf, req)
-	if errorHand != nil {
-		WriteError(conn, *errorHand)
-		return
-	}
-
-	response.WriteStatusLine(conn, 200)
-	headers := response.GetDefaultHeaders(buf.Len())
-	response.WriteHeaders(conn, headers)
-	conn.Write(buf.Bytes())
-
+	buf := response.Writer{Buf:conn}
+	s.handler(&buf, req)
+	buf.Flush()
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(w *response.Writer, req *request.Request)
 
 type HandlerError struct {
 	StatusCode response.StatusCode

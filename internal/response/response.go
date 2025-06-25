@@ -16,53 +16,99 @@ const (
 	InternalServerError = 500
 )
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
-	if statusCode == 200 {
-		_, err := w.Write([]byte("HTTP/1.1 200 OK\r\n"))
-		if err != nil {
-			return fmt.Errorf("Couldn't write: %v", err)
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.StatusOfWriter == Init {
+		if statusCode == 200 {
+			w.Statusline = "HTTP/1.1 200 OK\r\n"
 		}
-	}
-	if statusCode == 400 {
-		_, err := w.Write([]byte("HTTP/1.1 400 BadRequest\r\n"))
-		if err != nil {
-			return fmt.Errorf("Couldn't write: %v", err)
+		if statusCode == 400 {
+			w.Statusline = "HTTP/1.1 400 BadRequest\r\n"
 		}
-	}
-	if statusCode == 500 {
-		_, err := w.Write([]byte("HTTP/1.1 500 Internal Server Error\r\n"))
-		if err != nil {
-			return fmt.Errorf("Couldn't write: %v", err)
+		if statusCode == 500 {
+			w.Statusline = "HTTP/1.1 500 Internal Server Error\r\n"
 		}
+	} else {
+		return fmt.Errorf("Writer in the wrong state")
 	}
-	_, err := w.Write([]byte(""))
-	if err != nil {
-		return fmt.Errorf("Couldn't write: %v", err)
-	}
-	return nil
+	w.StatusOfWriter = Statusline 
+	return nil 
 }
 
 func GetDefaultHeaders(contentLen int) headers.Headers {
 	headersSet := headers.NewHeaders()
 	headersSet["Content-Length"] = strconv.Itoa(contentLen) 
 	headersSet["Connection"] = "close"
-	headersSet["Content-Type"] = "text/plain"
+	headersSet["Content-Type"] = "text/html"
 
 	return headersSet
 }
 
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
-	for k, v := range headers {
-		_, err := w.Write([]byte(k+": "+v+"\r\n"))
-		if err != nil {
-			return fmt.Errorf("Couldn't write header: %v", err)
-		}
-	}
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	if w.StatusOfWriter == Statusline {
+		w.Headers = headers
 
-	_, err := w.Write([]byte("\r\n"))
-	if err != nil {
-		return fmt.Errorf("Couldn't write header: %v", err)
+	} else {
+		return fmt.Errorf("Writer state is wrong")
 	}
-
+	w.StatusOfWriter = Headers
 	return nil	
+}
+
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	if w.StatusOfWriter == Headers {
+		w.Body = p
+	} else {
+		return 0, fmt.Errorf("Writer state is wrong")
+	}
+
+	w.StatusOfWriter = Body
+	return len(p), nil
+}
+
+func (w *Writer) Flush() error {
+	if w.StatusOfWriter == Body {
+		_, err := w.Buf.Write([]byte(w.Statusline))
+		if err != nil {
+			return err
+		}
+		for k, v := range w.Headers {
+			_, err = w.Buf.Write([]byte(k + ": " + v + "\r\n"))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = w.Buf.Write([]byte("\r\n"))
+		if err != nil {
+			return err
+		}
+		_, err = w.Buf.Write(w.Body)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		return fmt.Errorf("Writer state is wrong")
+	}
+	w.StatusOfWriter = done
+	
+	return nil
+}
+
+type StatusOfWriter int
+
+const (
+	Init StatusOfWriter = iota
+	Statusline 
+	Headers
+	Body
+	done
+)
+
+type Writer struct {
+	StatusOfWriter StatusOfWriter
+	Statuscode StatusCode 
+	Statusline string
+	Headers headers.Headers
+	Body []byte
+	Buf io.Writer
 }
