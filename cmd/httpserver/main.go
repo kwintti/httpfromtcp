@@ -1,11 +1,15 @@
 package main
 
 import (
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/kwintti/httpfromtcp/internal/headers"
 	"github.com/kwintti/httpfromtcp/internal/request"
 	"github.com/kwintti/httpfromtcp/internal/response"
 	"github.com/kwintti/httpfromtcp/internal/server"
@@ -29,6 +33,41 @@ func main() {
 
 func handler(w *response.Writer, req *request.Request){
 	target := req.RequestLine.RequestTarget
+	if strings.HasPrefix(target, "/httpbin") {
+		requestTarget := strings.TrimPrefix(target, "/httpbin")
+		resp, err := http.Get("https://httpbin.org" + requestTarget)
+		if err != nil {
+			log.Println(err)
+		}
+		w.WriteStatusLine(200)
+		resp.Header.Del("Content-Length")
+		resp.Header.Add("Transfer-Encoding", "chunked")
+		adjustedHeaders := headers.NewHeaders()
+		for k := range resp.Header {
+			adjustedHeaders[k] = resp.Header.Get(k)
+		}
+		w.WriteHeaders(adjustedHeaders)
+		w.ChunckedFlush()
+		buf := make([]byte, 999)
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				w.WriteChunkedBody(buf[:n])
+			}
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Println(err)
+				break
+			}
+		}
+		w.WriteChunkedBodyDone()
+		w.RespFullySent = true	
+		resp.Body.Close()
+		
+		return
+	}
 	if target == "/yourproblem" {
 	bodyText := []byte(`
 	<html>

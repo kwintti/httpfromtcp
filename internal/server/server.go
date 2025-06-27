@@ -68,7 +68,9 @@ func (s *Server) handle(conn net.Conn) {
 	}
 	buf := response.Writer{Buf:conn}
 	s.handler(&buf, req)
-	buf.Flush()
+	if !buf.RespFullySent {
+		buf.Flush()
+	}
 }
 
 type Handler func(w *response.Writer, req *request.Request)

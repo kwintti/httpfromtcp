@@ -1,6 +1,7 @@
 package response
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strconv"
@@ -34,9 +35,9 @@ func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	return nil 
 }
 
-func GetDefaultHeaders(contentLen int) headers.Headers {
+func GetDefaultHeaders(n int) headers.Headers {
 	headersSet := headers.NewHeaders()
-	headersSet["Content-Length"] = strconv.Itoa(contentLen) 
+	headersSet["Content-Length"] = strconv.Itoa(n) 
 	headersSet["Connection"] = "close"
 	headersSet["Content-Type"] = "text/html"
 
@@ -109,6 +110,62 @@ type Writer struct {
 	Statuscode StatusCode 
 	Statusline string
 	Headers headers.Headers
-	Body []byte
+	Body []byte 
 	Buf io.Writer
+	RespFullySent bool
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	trimmed := bytes.TrimRight(p, "\r\n")
+	length := len(trimmed)
+	lengthOfChunk := fmt.Sprintf("%x", length)
+	lengthOfP := []byte(lengthOfChunk + "\r\n")
+	_, err := w.ChunkWriter(lengthOfP)
+	if err != nil {
+		return 0, err 
+	}
+	_, err = w.ChunkWriter(append(trimmed, []byte("\r\n")...))
+	if err != nil {
+		return 0, err 
+	}
+
+	return len(p), nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	_, err := w.ChunkWriter([]byte("0\r\n\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil 
+}
+
+func (w *Writer) ChunkWriter(c []byte) (int, error) {
+	n, err := w.Buf.Write(c)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (w *Writer) ChunckedFlush() error {
+	_, err := w.Buf.Write([]byte(w.Statusline))
+	if err != nil {
+		return err
+	}
+	for k, v := range w.Headers {
+		headerLine := []byte(k + ": " + v + "\r\n")
+		_, err = w.Buf.Write(headerLine)
+		if err != nil {
+			return err
+		}
+	}
+	finalCRLF := []byte("\r\n")
+	_, err = w.Buf.Write(finalCRLF)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
