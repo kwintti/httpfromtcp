@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -42,17 +45,20 @@ func handler(w *response.Writer, req *request.Request){
 		w.WriteStatusLine(200)
 		resp.Header.Del("Content-Length")
 		resp.Header.Add("Transfer-Encoding", "chunked")
+		resp.Header.Add("Trailer", "X-Content-SHA256, X-Content-Length")
 		adjustedHeaders := headers.NewHeaders()
 		for k := range resp.Header {
 			adjustedHeaders[k] = resp.Header.Get(k)
 		}
 		w.WriteHeaders(adjustedHeaders)
 		w.ChunckedFlush()
+		var responseBody []byte
 		buf := make([]byte, 999)
 		for {
 			n, err := resp.Body.Read(buf)
 			if n > 0 {
 				w.WriteChunkedBody(buf[:n])
+				responseBody = append(responseBody, buf[:n]...)
 			}
 			if err != nil {
 				if err == io.EOF {
@@ -63,9 +69,16 @@ func handler(w *response.Writer, req *request.Request){
 			}
 		}
 		w.WriteChunkedBodyDone()
+
+		hash := fmt.Sprintf("%x", sha256.Sum256(responseBody))
+
+		trailers := headers.NewHeaders()
+		trailers["X-Content-SHA256"] = hash
+		trailers["X-Content-Length"] = strconv.Itoa(len(responseBody))
+		w.WriteTrailers(trailers)
 		w.RespFullySent = true	
+		w.Buf.Write([]byte("\r\n"))
 		resp.Body.Close()
-		
 		return
 	}
 	if target == "/yourproblem" {

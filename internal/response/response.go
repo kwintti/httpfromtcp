@@ -133,7 +133,7 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	_, err := w.ChunkWriter([]byte("0\r\n\r\n"))
+	_, err := w.ChunkWriter([]byte("0\r\n"))
 	if err != nil {
 		return 0, err
 	}
@@ -169,3 +169,12 @@ func (w *Writer) ChunckedFlush() error {
 	return nil
 }
 
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	for k, v := range h {
+		_, err := w.Buf.Write([]byte(k + ": " + v + "\r\n"))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
