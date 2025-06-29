@@ -178,3 +178,22 @@ func (w *Writer) WriteTrailers(h headers.Headers) error {
 	}
 	return nil
 }
+
+func (w *Writer) FlushVideo() error {
+		_, err := w.Buf.Write([]byte(w.Statusline))
+		if err != nil {
+			return err
+		}
+		for k, v := range w.Headers {
+			_, err = w.Buf.Write([]byte(k + ": " + v + "\r\n"))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = w.Buf.Write([]byte("\r\n"))
+		if err != nil {
+			return err
+		}
+		return nil
+}
+

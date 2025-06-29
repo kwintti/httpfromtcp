@@ -36,6 +36,20 @@ func main() {
 
 func handler(w *response.Writer, req *request.Request){
 	target := req.RequestLine.RequestTarget
+	if target == "/video" {
+		video, err := os.ReadFile("assets/vim.mp4")
+		if err != nil {
+			fmt.Println("Couldn't read file")
+		}
+		w.WriteStatusLine(200)
+		headers := headers.NewHeaders()
+		headers["Content-Type"] = "video/mp4"
+		headers["Connection"] = "close"
+		w.WriteHeaders(headers)
+		w.FlushVideo()
+		w.Buf.Write(video)
+		return
+	}
 	if strings.HasPrefix(target, "/httpbin") {
 		requestTarget := strings.TrimPrefix(target, "/httpbin")
 		resp, err := http.Get("https://httpbin.org" + requestTarget)
